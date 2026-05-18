@@ -212,6 +212,53 @@ function isVideoContentSection(contentSection: { heading?: string; subtopics?: A
   );
 }
 
+function isCheatSheetContentSection(contentSection: { heading?: string; subtopics?: Array<{ title?: string; description?: string }> }) {
+  return /cheat\s*sheet/i.test(contentSection.heading || "") && Boolean(contentSection.subtopics?.length);
+}
+
+function CheatSheetSection({
+  heading,
+  points = [],
+  subtopics = [],
+}: {
+  heading?: string;
+  points?: string[];
+  subtopics?: Array<{ title?: string; description?: string }>;
+}) {
+  return (
+    <section className="grid gap-3">
+      {heading ? (
+        <div className="grid gap-2 border-b border-teal-200/20 pb-3">
+          <h4 className="landing-display text-sm font-black text-teal-100">{heading}</h4>
+          {points.length ? (
+            <div className="grid gap-2 text-xs leading-5 text-slate-300 sm:grid-cols-2">
+              {points.map((point, pointIndex) => (
+                <p key={`${heading}-cheat-summary-${pointIndex}`} className="m-0 rounded-lg border border-white/10 bg-teal-200/[0.06] p-3">
+                  {point}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        {subtopics.map((subtopic, subtopicIndex) => (
+          <article key={`${heading}-cheat-${subtopicIndex}`} className="grid min-h-32 gap-2 rounded-lg border border-white/10 bg-slate-950/55 p-3">
+            <div className="flex items-start gap-2">
+              <span className="mt-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-md bg-teal-300 text-[10px] font-black text-slate-950">
+                {subtopicIndex + 1}
+              </span>
+              <h5 className="landing-display min-w-0 text-sm font-black leading-5 text-slate-100">{subtopic.title || "Room Note"}</h5>
+            </div>
+            {subtopic.description ? <p className="m-0 text-xs leading-5 text-slate-400">{subtopic.description}</p> : null}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function VideoResourceSection({
   heading,
   resources,
@@ -319,8 +366,6 @@ export default function RoadmapApp({ initialContent }: RoadmapAppProps) {
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(() => new Set());
   const [expandedCodeBlocks, setExpandedCodeBlocks] = useState<Set<string>>(() => new Set());
   const [theme, setTheme] = useState<Theme>("light");
-  const [actionBarHidden, setActionBarHidden] = useState(false);
-  const [actionBarDocked, setActionBarDocked] = useState(false);
 
   useEffect(() => {
     setIsHydrated(true);
@@ -395,40 +440,6 @@ export default function RoadmapApp({ initialContent }: RoadmapAppProps) {
     setExpandedSections(nextSections);
     setExpandedTopics(nextTopics);
   }, [initialContent, searchTerm]);
-
-  useEffect(() => {
-    let lastScrollY = window.scrollY;
-    let ticking = false;
-
-    function handleScroll() {
-      if (ticking) return;
-
-      window.requestAnimationFrame(() => {
-        const currentScrollY = window.scrollY;
-        const scrollingDown = currentScrollY > lastScrollY + 8;
-        const scrollingUp = currentScrollY < lastScrollY - 8;
-
-        const roadmapStart = document.getElementById("roadmap-workspace")?.offsetTop || window.innerHeight;
-        const isPastHero = currentScrollY > roadmapStart - 120;
-
-        setActionBarDocked(isPastHero);
-
-        if (!isPastHero || currentScrollY < 160 || scrollingUp) {
-          setActionBarHidden(false);
-        } else if (scrollingDown && currentScrollY > 280) {
-          setActionBarHidden(true);
-        }
-
-        lastScrollY = currentScrollY;
-        ticking = false;
-      });
-
-      ticking = true;
-    }
-
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
 
   const visibleSections = useMemo(() => {
     return initialContent
@@ -552,12 +563,7 @@ export default function RoadmapApp({ initialContent }: RoadmapAppProps) {
           </div>
         </section>
 
-        <header
-          className={cx(
-            "roadmap-actionbar fixed left-0 right-0 top-0 z-30 border-b border-white/10 bg-[#10211f]/95 px-3 py-2 backdrop-blur transition-transform duration-300 sm:px-5 sm:py-3",
-            (!actionBarDocked || actionBarHidden) && "-translate-y-full",
-          )}
-        >
+        <header className="roadmap-actionbar sticky top-0 z-30 border-b border-white/10 bg-[#10211f]/95 px-3 py-2 backdrop-blur sm:px-5 sm:py-3">
           <div className="grid gap-2 sm:gap-3 xl:grid-cols-[minmax(220px,280px)_minmax(260px,1fr)_auto] xl:items-center">
             <div className="flex min-w-0 items-center gap-3">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-300 text-xs font-black text-slate-950 sm:h-10 sm:w-10 sm:text-sm">
@@ -631,7 +637,7 @@ export default function RoadmapApp({ initialContent }: RoadmapAppProps) {
           </div>
         </header>
 
-        <section id="roadmap-workspace" className="grid gap-0 lg:h-screen lg:min-h-0 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <section id="roadmap-workspace" className="grid gap-0 lg:h-[calc(100vh-72px)] lg:min-h-0 lg:grid-cols-[320px_minmax(0,1fr)]">
           <aside className="grid min-h-0 border-b border-white/10 bg-white/[0.035] p-4 lg:grid-rows-[auto_auto_minmax(0,1fr)] lg:border-b-0 lg:border-r lg:border-r-white/10">
             <div className="flex items-center justify-between gap-3">
               <h2 className="landing-display text-base font-black text-white">Study Roadmap</h2>
@@ -820,6 +826,17 @@ function TopicCard({
           {topic.description ? <p className="m-0 text-sm leading-6 text-slate-300">{topic.description}</p> : null}
 
           {(topic.content_sections || []).map((contentSection, index) => {
+            if (isCheatSheetContentSection(contentSection)) {
+              return (
+                <CheatSheetSection
+                  key={`${topicKey}-content-${index}`}
+                  heading={contentSection.heading}
+                  points={contentSection.points}
+                  subtopics={contentSection.subtopics}
+                />
+              );
+            }
+
             if (isVideoContentSection(contentSection)) {
               const resources = (contentSection.subtopics || [])
                 .map((subtopic) => parseVideoResource(subtopic.title || "Video", subtopic.description || ""))

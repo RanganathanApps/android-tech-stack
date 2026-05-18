@@ -38,6 +38,10 @@ const report = {
   duplicateTopics: 0,
   duplicateContentSections: 0,
   duplicatePoints: 0,
+  duplicateTopicDescriptionPoints: 0,
+  migratedKeyPoints: 0,
+  skippedDuplicateMigratedKeyPoints: 0,
+  removedKeyPointSections: 0,
   duplicateSubtopics: 0,
   duplicateCodeBlocks: 0,
   emptyContentSections: 0,
@@ -58,6 +62,7 @@ for (const section of cleanedContent) {
   for (const topic of section.topics) {
     topic.title = normalizeText(topic.title);
     topic.description = normalizeText(topic.description);
+    const topicDescriptionKey = topic.description.toLowerCase();
 
     const contentSectionDedupe = dedupeBy(topic.content_sections || [], (contentSection) =>
       normalizeText(contentSection.heading).toLowerCase(),
@@ -70,7 +75,20 @@ for (const section of cleanedContent) {
 
       const pointDedupe = cleanPoints(contentSection.points || []);
       report.duplicatePoints += pointDedupe.removed;
-      contentSection.points = pointDedupe.next;
+      const cleanedPoints = [];
+
+      for (const point of pointDedupe.next) {
+        const pointKey = point.toLowerCase();
+
+        if (pointKey && pointKey === topicDescriptionKey) {
+          report.duplicateTopicDescriptionPoints += 1;
+          continue;
+        }
+
+        cleanedPoints.push(point);
+      }
+
+      contentSection.points = cleanedPoints;
 
       const subtopicDedupe = dedupeBy(contentSection.subtopics || [], (subtopic) =>
         `${normalizeText(subtopic.title).toLowerCase()}::${normalizeText(subtopic.description).toLowerCase()}`,
@@ -82,12 +100,62 @@ for (const section of cleanedContent) {
       }));
     }
 
+    const contentSectionsByHeading = new Map();
+    const topicPointKeys = new Set();
+
+    for (const contentSection of topic.content_sections) {
+      const headingKey = normalizeText(contentSection.heading).toLowerCase();
+      if (headingKey && headingKey !== "key points" && !contentSectionsByHeading.has(headingKey)) {
+        contentSectionsByHeading.set(headingKey, contentSection);
+      }
+
+      for (const point of contentSection.points || []) {
+        const pointKey = normalizeText(point).toLowerCase();
+        if (pointKey) topicPointKeys.add(pointKey);
+      }
+    }
+
+    const fallbackContentSection =
+      topic.content_sections.find((contentSection) => normalizeText(contentSection.heading).toLowerCase() !== "key points") ||
+      null;
+
+    for (const keyPointSection of topic.content_sections.filter(
+      (contentSection) => normalizeText(contentSection.heading).toLowerCase() === "key points",
+    )) {
+      report.removedKeyPointSections += 1;
+
+      for (const point of keyPointSection.points || []) {
+        const normalizedPoint = normalizeText(point);
+        if (!normalizedPoint) continue;
+
+        const colonIndex = normalizedPoint.indexOf(":");
+        const prefixKey = colonIndex > 0 ? normalizeText(normalizedPoint.slice(0, colonIndex)).toLowerCase() : "";
+        const targetContentSection = contentSectionsByHeading.get(prefixKey) || fallbackContentSection;
+        const pointToAdd = targetContentSection && contentSectionsByHeading.has(prefixKey)
+          ? normalizeText(normalizedPoint.slice(colonIndex + 1))
+          : normalizedPoint;
+        const pointKey = pointToAdd.toLowerCase();
+
+        if (!targetContentSection || !pointKey) continue;
+
+        if (topicPointKeys.has(pointKey)) {
+          report.skippedDuplicateMigratedKeyPoints += 1;
+          continue;
+        }
+
+        targetContentSection.points = [...(targetContentSection.points || []), pointToAdd];
+        topicPointKeys.add(pointKey);
+        report.migratedKeyPoints += 1;
+      }
+    }
+
+    topic.content_sections = topic.content_sections.filter(
+      (contentSection) => normalizeText(contentSection.heading).toLowerCase() !== "key points",
+    );
+
     const beforeEmpty = topic.content_sections.length;
     topic.content_sections = topic.content_sections.filter(
-      (contentSection) =>
-        normalizeText(contentSection.heading) ||
-        (contentSection.points || []).length ||
-        (contentSection.subtopics || []).length,
+      (contentSection) => (contentSection.points || []).length || (contentSection.subtopics || []).length,
     );
     report.emptyContentSections += beforeEmpty - topic.content_sections.length;
 
